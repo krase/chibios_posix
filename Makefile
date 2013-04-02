@@ -73,6 +73,7 @@ SRC  = ${PORTSRC} \
        $(BOARDSRC) \
        ${CHIBIOS}/os/various/shell.c \
        ${CHIBIOS}/os/various/chprintf.c \
+		 cmd_testqueue.c \
        main.c
 
 # List ASM source files here

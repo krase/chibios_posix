@@ -1,0 +1,13 @@
+Index: os/ports/GCC/SIMIA32/chcore.c
+===================================================================
+--- os/ports/GCC/SIMIA32/chcore.c	(Revision 5526)
++++ os/ports/GCC/SIMIA32/chcore.c	(Arbeitskopie)
+@@ -38,7 +38,7 @@
+   (void)ntp; (void)otp;
+ 
+   asm volatile (
+-#if defined(WIN32)
++#if defined(WIN32) || defined(__CYGWIN32__)
+                 ".globl @port_switch@8                          \n\t"
+                 "@port_switch@8:"
+ #elif defined(__APPLE__)
