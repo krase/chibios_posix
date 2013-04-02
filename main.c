@@ -104,9 +104,9 @@ static msg_t console_thread(void *arg) {
 static void termination_handler(eventid_t id) {
 
   (void)id;
-  if (shelltp1 && chThdTerminated(shelltp1)) {
-    chThdWait(shelltp1);
-    shelltp1 = NULL;
+  if (shelltp && chThdTerminated(shelltp)) {
+    chThdWait(shelltp);
+    shelltp = NULL;
     chThdSleepMilliseconds(10);
     cputs("Init: shell on SD1 terminated");
     chSysLock();
@@ -127,9 +127,9 @@ static void sd1_handler(eventid_t id) {
 
   (void)id;
   flags = chEvtGetAndClearFlags(&sd1fel);
-  if ((flags & CHN_CONNECTED) && (shelltp1 == NULL)) {
+  if ((flags & CHN_CONNECTED) && (shelltp == NULL)) {
     cputs("Init: connection on SD1");
-    shelltp1 = shellCreate(&shell_cfg1, SHELL_WA_SIZE, NORMALPRIO + 1);
+    shelltp = shellCreate(&shell_cfg1, SHELL_WA_SIZE, NORMALPRIO + 1);
   }
   if (flags & CHN_DISCONNECTED) {
     cputs("Init: disconnection on SD1");
