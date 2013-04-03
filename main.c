@@ -5,6 +5,7 @@
 #include "test.h"
 #include "shell.h"
 #include "chprintf.h"
+#include "cmd_testqueue.h"
 
 #define SHELL_WA_SIZE       THD_WA_SIZE(4096)
 #define CONSOLE_WA_SIZE     THD_WA_SIZE(4096)
@@ -70,6 +71,8 @@ static const ShellCommand commands[] = {
   {"mem", cmd_mem},
   {"threads", cmd_threads},
   {"test", cmd_test},
+  {"queue", cmd_test_queue},
+  {"quitq", cmd_quit_queue},
   {NULL, NULL}
 };
 
