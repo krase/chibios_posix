@@ -168,6 +168,9 @@ int main(void) {
    */
   sdStart(&SD1, NULL);
 
+  /* Queue test initializer */
+  test_queue_init(&SD1);
+
   /*
    * Shell manager initialization.
    */

@@ -1,7 +1,7 @@
 #ifndef __CMD_TESTQUEUE_H__
 #define __CMD_TESTQUEUE_H__
 
-void test_queue_init(void);
+void test_queue_init(BaseSequentialStream *chp);
 
 void cmd_test_queue(BaseSequentialStream *_chp, int argc, char *argv[]);
 
