@@ -40,6 +40,15 @@ static msg_t        qMailboxQueue[QUEUE_SIZE];
 static can_msg_t    qData[QUEUE_SIZE];
 /* ---------------------------- */
 
+/* TODO
+
+	- Interrupt as reader: 
+	  - must use chMBFetchI(), 
+	  - when queue is empty: returns RDY_TIMEOUT
+	  - disable int when empty and enable it again with write_done()
+
+
+*/
 
 void test_queue_init(BaseSequentialStream *chp)
 {
@@ -101,6 +110,7 @@ can_msg_t* q_get_wslotI(void)
 	}
 }
 
+//TODO: if reader is an INT, enable it when queue was empty
 void q_write_done(void) 
 {
 	const uint32_t last_index = writer.qIndex;
@@ -147,6 +157,12 @@ can_msg_t* q_read(void)
 	}
 	
 	return &qData[index]; /* peek message out of the queue */
+}
+
+can_msg_t* q_readI(void)
+{
+	/* TODO */
+	//test if queue is empty and disable interrupt if so 
 }
 
 void q_read_done(void)
