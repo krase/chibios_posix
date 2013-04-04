@@ -48,20 +48,22 @@ static uint32_t     qIndex;
 void test_queue_init(BaseSequentialStream *chp)
 {
 	(void)chp;
-	uint32_t i;
 	chMBInit(&qMailbox, qMailboxQueue, QUEUE_SIZE);
-	for(i=0; i < QUEUE_SIZE; i++)
-		qData[i].state = ITEM_STATE_EMPTY;
 }
 
 void cmd_test_queue(BaseSequentialStream *_chp, int argc, char *argv[])
 {
+	uint32_t i;
+
 	(void)argc; (void)argv;
 	chp = _chp;
 	chprintf(chp, "Starting QueueTest\n");
+	
 	w_should_run = 1;
 	r_should_run = 1;
 	qIndex = 0;
+	for(i=0; i < QUEUE_SIZE; i++)
+		qData[i].state = ITEM_STATE_EMPTY;
 	rThread = chThdCreateStatic(waRThread, sizeof(waRThread), NORMALPRIO, 
 			RThreadHandler, NULL);
 	wThread = chThdCreateStatic(waWThread, sizeof(waWThread), NORMALPRIO, 
@@ -77,46 +79,38 @@ void cmd_quit_queue(BaseSequentialStream *chp, int argc, char *argv[])
 	chThdWait(rThread);
 }
 
-int q_write(void)
+//TODO: must be CANRxFrame later
+can_msg_t* q_get_wslot(void)
 {
-	int i;
 	item_t *item;
-	msg_t mbstatus;
-
-	/* TODO: move out of here */
-	static can_msg_t msg = {
-		.id = 0x123,
-		.dlc = 8,
-		.data = {0},
-	};
-
-	for(i=0; i<7; i++) {
-		msg.data[i] = 'A'+qIndex;
-	}
 
 	item = &qData[qIndex];
-	//chSysLock(); //chSysLockFromIsr();
+	chSysLock(); //chSysLockFromIsr();
 	if( item->state == ITEM_STATE_EMPTY ) { 
 		item->state = ITEM_STATE_USED;
-		//chSysUnlock(); //chSysUnlockFromIsr();
-		item->msg = msg; //Assign the CAN message
-		/* Wakes the reader when queue was empty before */
-		mbstatus = chMBPost(&qMailbox, (msg_t)qIndex, 0);
-		//mbstatus = chMBPostI(&qMailbox, (msg_t)qIndex, 0);
-		if(mbstatus == RDY_TIMEOUT) {
-      	chprintf(chp, "Error: Timeout in Queue Post!!\n");
-   	}
-		chprintf(chp, "W\n");
-		qIndex++;
-		if(qIndex >= QUEUE_SIZE)
-			qIndex = 0;
-		//all ok
-		return 1;
+		chSysUnlock(); //chSysUnlockFromIsr();
+		return &item->msg;
 	} else {
-		//chSysUnlock(); //chSysUnlockFromIsr();
+		chSysUnlock(); //chSysUnlockFromIsr();
 		//retry..
 		return 0;
 	}
+}
+
+void q_write_done(void) 
+{
+	msg_t mbstatus;
+
+	/* Wakes the reader when queue was empty before */
+	mbstatus = chMBPost(&qMailbox, (msg_t)qIndex, 0);
+	//mbstatus = chMBPostI(&qMailbox, (msg_t)qIndex);
+	if(mbstatus == RDY_TIMEOUT) {
+		chprintf(chp, "Error: Timeout in Queue Post!!\n");
+	}
+	chprintf(chp, "W\n");
+	qIndex++;
+	if(qIndex >= QUEUE_SIZE)
+		qIndex = 0;
 }
 
 msg_t q_read(item_t **item)
@@ -167,13 +161,25 @@ static msg_t WThreadHandler(void *arg)
 {
 	(void)arg;
 	uint32_t count = 0;
+	static can_msg_t *msgp = 0;
+	int i;
 
 	while(w_should_run) {
 		chThdSleepMilliseconds(500);
-		while(!q_write() && w_should_run && count<MAX_W_RETRY) {
+		msgp = q_get_wslot();
+		while(!msgp && w_should_run && count<MAX_W_RETRY) {
 			chThdSleepMilliseconds(10);
 			chprintf(chp, "* retry W %d\n", count);
 			count++;
+			msgp = q_get_wslot();
+		}
+		if(msgp)
+		{
+			//simulate lld_fetch
+			for(i=0; i<7; i++) {
+				msgp->data[i] = 'A'+qIndex;
+			}
+			q_write_done();
 		}
 		count = 0;
 	}
