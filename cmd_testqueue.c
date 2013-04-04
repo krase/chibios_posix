@@ -20,27 +20,38 @@ static int r_should_run;
 static BaseSequentialStream *chp;
 
 /* ---------------------------- */
+typedef enum {
+	ITEM_STATE_EMPTY = 0,
+	ITEM_STATE_USED = 1,
+} item_state_t;
+
 typedef struct {
 	uint16_t id;
 	uint8_t  dlc;
 	uint8_t  data[8];
 } can_msg_t;
 
+typedef struct {
+	item_state_t state;
+	can_msg_t msg;
+} item_t;
+
 #define QUEUE_SIZE  6
 #define MAX_W_RETRY 3
-static Mailbox			qMailbox;
-static msg_t			qMailboxQueue[QUEUE_SIZE];
-static Semaphore		qSem;
-static can_msg_t     qData[QUEUE_SIZE];
-static uint32_t		qIndex;
+static Mailbox      qMailbox;
+static msg_t        qMailboxQueue[QUEUE_SIZE];
+static item_t       qData[QUEUE_SIZE];
+static uint32_t     qIndex;
 /* ---------------------------- */
 
 
 void test_queue_init(BaseSequentialStream *chp)
 {
-	//chprintf(chp, "SEM and Queue init\n");
+	(void)chp;
+	uint32_t i;
 	chMBInit(&qMailbox, qMailboxQueue, QUEUE_SIZE);
-	chSemInit(&qSem, QUEUE_SIZE);
+	for(i=0; i < QUEUE_SIZE; i++)
+		qData[i].state = ITEM_STATE_EMPTY;
 }
 
 void cmd_test_queue(BaseSequentialStream *_chp, int argc, char *argv[])
@@ -69,6 +80,10 @@ void cmd_quit_queue(BaseSequentialStream *chp, int argc, char *argv[])
 int q_write(void)
 {
 	int i;
+	item_t *item;
+	msg_t mbstatus;
+
+	/* TODO: move out of here */
 	static can_msg_t msg = {
 		.id = 0x123,
 		.dlc = 8,
@@ -79,31 +94,38 @@ int q_write(void)
 		msg.data[i] = 'A'+qIndex;
 	}
 
-	chprintf(chp, " Free: %d\n", chSemGetCounterI(&qSem));
-
-	if( chSemGetCounterI(&qSem) > 0 ) { //We have space in the queue
-		chSemFastWaitI(&qSem);
-		qData[qIndex] = msg;
+	item = &qData[qIndex];
+	//chSysLock(); //chSysLockFromIsr();
+	if( item->state == ITEM_STATE_EMPTY ) { 
+		item->state = ITEM_STATE_USED;
+		//chSysUnlock(); //chSysUnlockFromIsr();
+		item->msg = msg; //Assign the CAN message
 		/* Wakes the reader when queue was empty before */
-		chMBPost(&qMailbox, (msg_t)qIndex, TIME_INFINITE);
+		mbstatus = chMBPost(&qMailbox, (msg_t)qIndex, 0);
+		//mbstatus = chMBPostI(&qMailbox, (msg_t)qIndex, 0);
+		if(mbstatus == RDY_TIMEOUT) {
+      	chprintf(chp, "Error: Timeout in Queue Post!!\n");
+   	}
 		chprintf(chp, "W\n");
 		qIndex++;
 		if(qIndex >= QUEUE_SIZE)
 			qIndex = 0;
+		//all ok
 		return 1;
 	} else {
+		//chSysUnlock(); //chSysUnlockFromIsr();
 		//retry..
 		return 0;
 	}
 }
 
-void q_read(void)
+msg_t q_read(item_t **item)
 {
 	msg_t index;
-	can_msg_t *msg;
 	msg_t mbstatus;
 
-	/* Only the reader sleeps in the queue. The writer must poll the semaphore */
+	/* Only the reader sleeps on the queue. 
+	 * The writer must test the state flag of the item */
 	mbstatus = chMBFetch(&qMailbox, &index, TIME_INFINITE);
 	if(mbstatus == RDY_RESET) {
 		chprintf(chp, "MB RESET!!!\n");
@@ -112,22 +134,31 @@ void q_read(void)
 		chprintf(chp, "MB TIMEOUT!!!\n");
 	}
 	
-	msg = &qData[index];
-	//do something with msg
-	chprintf(chp, "Rmsg: %s\n", msg->data);
-	
-	/* We do not have to mark the slot as free because the semaphore
-	 * ensures that the writer does not write when the queue is full */
-	chSemFastSignalI(&qSem);
+	*item = &qData[index]; /* peek message out of the queue */
+	return index;
+}
+
+void q_read_done(msg_t index)
+{
+	/* Marks the slot as free */
+	qData[index].state = ITEM_STATE_EMPTY;
 }
 
 static msg_t RThreadHandler(void *arg) 
 {
 	(void)arg;
+	item_t *item;
+	msg_t index;
+
 	while(r_should_run) {
 		chThdSleepMilliseconds(800);
-		//chprintf(chp, "R\n");
-		q_read();
+		
+		/* read next slot */
+		index = q_read(&item);
+		/* do something with the msg */
+		chprintf(chp, "Rmsg: %s\n", item->msg.data);
+		/* mark slot as free */
+		q_read_done(index);
 	}
 	return 0;
 }
@@ -142,7 +173,6 @@ static msg_t WThreadHandler(void *arg)
 		while(!q_write() && w_should_run && count<MAX_W_RETRY) {
 			chThdSleepMilliseconds(10);
 			chprintf(chp, "* retry W %d\n", count);
-			q_write();
 			count++;
 		}
 		count = 0;
